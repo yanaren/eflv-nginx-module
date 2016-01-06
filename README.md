@@ -22,12 +22,7 @@ Table of Contents
 Description
 ===========
 
-The *hls-nginx-module* module provides HTTP Live Streaming (HLS) server-side support for H.264/AAC files. Such files typically have the .mp4, .m4v, or .m4a filename extensions.
-
-nginx supports two URIs for each MP4 file:
-
- * The playlist URI that ends with “.m3u8” and accepts the optional “len” argument that defines the fragment length in seconds;
- * The fragment URI that ends with “.ts” and accepts “start” and “end” arguments that define fragment boundaries in seconds.
+It handles requests with the start argument in the request URI’s query string specially, by sending back the contents of a file starting from the requested byte offset and with the prepended FLV header.
 
 [Back to TOC](#table-of-contents)
 
