@@ -122,7 +122,7 @@ static ngx_command_t  ngx_http_eflv_commands[] = {
 };
 
 
-#define NGX_FLV_METADATALEN 327680 //32768  //1024*32
+#define NGX_FLV_METADATALEN 327680
 
 
 #define ngx_flv_get_32value(p)                                                \
@@ -162,7 +162,6 @@ ngx_atoint(u_char *line, size_t n)
 
     for (value = 0; n--; line++) {
         if (*line < '0' || *line > '9') {
-            //return NGX_ERROR;
             break;
         }
 
@@ -195,8 +194,8 @@ static ngx_http_module_t  ngx_http_eflv_module_ctx = {
 
 ngx_module_t  ngx_http_eflv_module = {
     NGX_MODULE_V1,
-    &ngx_http_eflv_module_ctx,      /* module context */
-    ngx_http_eflv_commands,         /* module directives */
+    &ngx_http_eflv_module_ctx,     /* module context */
+    ngx_http_eflv_commands,        /* module directives */
     NGX_HTTP_MODULE,               /* module type */
     NULL,                          /* init master */
     NULL,                          /* init module */
@@ -210,10 +209,10 @@ ngx_module_t  ngx_http_eflv_module = {
 
 
 static void
-ngx_flv_revert_int(char *s, const char *d, int len)
+ngx_flv_revert_int(char *s, const char *d, ngx_int_t len)
 {
     ngx_int_t     i;
-    for (i = len -1 ; i >= 0; i--) {
+    for (i = len -1; i >= 0; i--) {
         *(s+i) = *d;
         d++;
     }
@@ -245,13 +244,13 @@ ngx_flv_swap_duration(char *p, double value)
 
 
 static ngx_int_t
-ngx_http_eflv_read_secondpass(char *flv, size_t streampos, double filesize, ngx_flv_h264_tag_t *pFirstMetaDataTag)
+ngx_http_eflv_read_secondpass(char *flv, size_t streampos, double filesize, ngx_flv_h264_tag_t *tag)
 {
     size_t datasize,  audiosize = 0;
     size_t  audiotags = 0;
     ngx_flv_tag_t *flvtag;
 
-    pFirstMetaDataTag->start = 0;
+    tag->start = 0;
 
     for(;;) {
 
@@ -260,7 +259,6 @@ ngx_http_eflv_read_secondpass(char *flv, size_t streampos, double filesize, ngx_
 
         flvtag = (ngx_flv_tag_t *)&flv[streampos];
 
-        //TagHeader + TagData + PreviousTagSize       
         datasize = sizeof(ngx_flv_tag_t) + ngx_flv_get_24value(flvtag->datasize) + 4;
 
         if(streampos + datasize > filesize)
@@ -270,14 +268,12 @@ ngx_http_eflv_read_secondpass(char *flv, size_t streampos, double filesize, ngx_
 
             audiosize += ngx_flv_get_24value(flvtag->datasize);
             audiotags++;
-            if (pFirstMetaDataTag->start == 0)
-            {
-                pFirstMetaDataTag->start=streampos;
-                pFirstMetaDataTag->datasize=datasize;
+            if (tag->start == 0) {
+                tag->start = streampos;
+                tag->datasize=datasize;
             }
 
-            if (pFirstMetaDataTag->start>0)
-            {
+            if (tag->start > 0) {
                 return 1;
             }
         }
@@ -290,7 +286,7 @@ ngx_http_eflv_read_secondpass(char *flv, size_t streampos, double filesize, ngx_
 
 
 static int
-ngx_http_eflv_read_firstpass(char *flv,size_t streampos,size_t filesize, ngx_flv_h264_tag_t *pFirstH264VideoTag, ngx_flv_h264_tag_t *pFirstH264Audio)
+ngx_http_eflv_read_firstpass(char *flv,size_t streampos,size_t filesize, ngx_flv_h264_tag_t *tag, ngx_flv_h264_tag_t *audio)
 {
     size_t datasize, videosize = 0, audiosize = 0;
     size_t videotags = 0, audiotags = 0;
@@ -298,8 +294,8 @@ ngx_http_eflv_read_firstpass(char *flv,size_t streampos,size_t filesize, ngx_flv
     //ngx_flv_audio_data_t    *flvaudio;
     ngx_flv_video_data_t    *flvvideo;
 
-    pFirstH264VideoTag->start = 0;
-    pFirstH264Audio->start = 0;
+    tag->start = 0;
+    audio->start = 0;
     for(;;) {
         if (streampos + sizeof(ngx_flv_tag_t) > filesize)
             break;
@@ -316,18 +312,15 @@ ngx_http_eflv_read_firstpass(char *flv,size_t streampos,size_t filesize, ngx_flv
 
             audiosize += ngx_flv_get_24value(flvtag->datasize);
             audiotags++;
-            if (pFirstH264Audio->start == 0)
-            {
-                pFirstH264Audio->start=streampos;
-                pFirstH264Audio->datasize=datasize;
+            if (audio->start == 0) {
+                audio->start = streampos;
+                audio->datasize=datasize;
             }
 
-            if (pFirstH264VideoTag->start>0)
-            {
+            if (tag->start > 0) {
                 return 1;
             }
-        }
-        else if(flvtag->type == NGX_FLV_VIDEODATA) {
+        } else if (flvtag->type == NGX_FLV_VIDEODATA) {
             //flvmetadata.datasize += (double)datasize;
             //// datasize - PreviousTagSize
             //flvmetadata.videosize += (double)(datasize - 4);
@@ -340,12 +333,12 @@ ngx_http_eflv_read_firstpass(char *flv,size_t streampos,size_t filesize, ngx_flv
 
             switch(flvvideo->flags & 0xf) {
                 case NGX_FLV_AVCVIDEOPACKET:
-                    if (pFirstH264VideoTag->start == 0) {
-                        pFirstH264VideoTag->start = streampos;
-                        pFirstH264VideoTag->datasize = datasize;
+                    if (tag->start == 0) {
+                        tag->start = streampos;
+                        tag->datasize = datasize;
                     }
 
-                    if (pFirstH264Audio->start > 0) {
+                    if (audio->start > 0) {
                         return 1;
                     }
 
@@ -391,14 +384,14 @@ ntx_htt_sflv_metadata(ngx_int_t fd, double len, char *send_header_buf, char *sen
 
     flvfileheader = (ngx_flv_header_t *)flv;
     streampos = ngx_flv_get_32value(flvfileheader->headersize) + 4;
-    memcpy(send_header_buf,flv,13);
+    ngx_memcpy(send_header_buf,flv,13);
 
     ngx_http_eflv_read_secondpass(flv, streampos, NGX_FLV_METADATALEN,&tMetaDataTag);
     *metadata_size = (ngx_int_t) tMetaDataTag.datasize;
     *metaend_pos = tMetaDataTag.start + tMetaDataTag.datasize;
     if (tMetaDataTag.start > 0) {
         if (tMetaDataTag.datasize <= NGX_FLV_METADATALEN){
-            memcpy(send_metadata_buf,flv+tMetaDataTag.start,tMetaDataTag.datasize);
+            ngx_memcpy(send_metadata_buf,flv+tMetaDataTag.start,tMetaDataTag.datasize);
         }
     }
 
@@ -406,10 +399,10 @@ ntx_htt_sflv_metadata(ngx_int_t fd, double len, char *send_header_buf, char *sen
     *video_size = (ngx_int_t)tH264VideoTag.datasize;
     *audio_size = (ngx_int_t)tH264AudioTag.datasize; 
     if (tH264VideoTag.start > 0) {
-        memcpy(send_tH264VideoTag_buf, flv+tH264VideoTag.start,tH264VideoTag.datasize);
+        ngx_memcpy(send_tH264VideoTag_buf, flv+tH264VideoTag.start,tH264VideoTag.datasize);
     }
     if (tH264AudioTag.start > 0) {
-        memcpy(send_tH264AudioTag_buf, flv+tH264AudioTag.start,tH264AudioTag.datasize);
+        ngx_memcpy(send_tH264AudioTag_buf, flv+tH264AudioTag.start,tH264AudioTag.datasize);
     } 
 }
 
@@ -458,7 +451,7 @@ ngx_http_flv_get_real_value(const char *times, const char *filepos, int num, con
 
                 timepos = 0;
                 ngx_flv_revert_int(rbuf, &times[10+((min_index+max_index)/2+j)*9+1], 8);
-                memcpy(&timepos, &rbuf, 8);
+                ngx_memcpy(&timepos, &rbuf, 8);
 
                 if(timepos < value){
                         min_index = (min_index+max_index)/2+j;
@@ -471,9 +464,9 @@ ngx_http_flv_get_real_value(const char *times, const char *filepos, int num, con
     }
 
         ngx_flv_revert_int(rbuf, &times[10+min_index*9+1],8);
-        memcpy(&min_value, &rbuf, 8);
+        ngx_memcpy(&min_value, &rbuf, 8);
         ngx_flv_revert_int(rbuf, &times[10+max_index*9+1],8);
-        memcpy(&temp, &rbuf, 8);
+        ngx_memcpy(&temp, &rbuf, 8);
 	
         if (value > temp){
                 min_index = num - 1;
@@ -487,13 +480,13 @@ ngx_http_flv_get_real_value(const char *times, const char *filepos, int num, con
         }
 
         ngx_flv_revert_int(rbuf, &times[10+min_index*9+1],8);
-        memcpy(&min_value, &rbuf, 8);
+        ngx_memcpy(&min_value, &rbuf, 8);
 
         *ret_time = min_value;
 
         double timepos2 = 0;
         ngx_flv_revert_int(rbuf, &filepos[18+min_index*9+1],8);
-        memcpy(&timepos2, &rbuf, 8);
+        ngx_memcpy(&timepos2, &rbuf, 8);
         file_pos = timepos2;
 
         if (start_index != -1 ){
@@ -523,10 +516,10 @@ ngx_http_eflv_get_position(char *str_src, size_t str_len, size_t filesize, const
     size = 0;
     bzero(buf,sizeof(buf));
     if (filesize <=str_len){
-        memcpy(buf,str_src,filesize);
+        ngx_memcpy(buf,str_src,filesize);
     }
     else{
-        memcpy(buf,str_src,str_len);
+        ngx_memcpy(buf,str_src,str_len);
     }
     buf_tmp = buf;
 
@@ -590,7 +583,7 @@ ngx_http_eflv_time_drag_position(char *flv ,double *start,double *end,double fil
     char rbuf[32] = {0};
     unsigned int keyframes_num = 0;
     ngx_flv_revert_int(rbuf, &times[6],4);
-    memcpy(&keyframes_num, &rbuf,4);
+    ngx_memcpy(&keyframes_num, &rbuf,4);
 
     char *filepositions = ngx_http_eflv_get_position(keyframes, NGX_FLV_METADATALEN,filesize,"filepositions");
     if(filepositions == NULL){
@@ -603,10 +596,10 @@ ngx_http_eflv_time_drag_position(char *flv ,double *start,double *end,double fil
     char *p_duration = ngx_http_eflv_get_position(flv, NGX_FLV_METADATALEN,filesize,"duration");
     if (p_duration == NULL){
         ngx_flv_revert_int(rbuf, &times[10+(keyframes_num-1)*9+1],8);
-        memcpy(&temp, &rbuf, 8);
+        ngx_memcpy(&temp, &rbuf, 8);
     } else {
         ngx_flv_revert_int(rbuf, &p_duration[9],8);
-        memcpy(&temp, &rbuf, 8);
+        ngx_memcpy(&temp, &rbuf, 8);
     }
 
     int index = 0;
@@ -696,6 +689,7 @@ ntx_http_eflv_metadata(ngx_int_t fd,double *start , double *end,ngx_int_t have_e
 
     ngx_http_eflv_time_drag_position(flv,start,end,len,have_end,&drag_FLVMetaData,&key_times,&key_filepos,r);
     ngx_http_eflv_read_secondpass(flv, streampos, len,&tMetaDataTag);
+
     if (tMetaDataTag.start > 0) {
             char *p_duration = NULL;
             if (tMetaDataTag.datasize <= NGX_FLV_METADATALEN){
@@ -711,12 +705,14 @@ ntx_http_eflv_metadata(ngx_int_t fd,double *start , double *end,ngx_int_t have_e
     ngx_http_eflv_read_firstpass(flv, streampos, NGX_FLV_METADATALEN, &tH264VideoTag,&tH264AudioTag);
     *video_size = (ngx_int_t)tH264VideoTag.datasize;
     *audio_size = (ngx_int_t)tH264AudioTag.datasize;
+
     if (tH264VideoTag.start > 0) {
-        memcpy(send_tH264VideoTag_buf, flv+tH264VideoTag.start,tH264VideoTag.datasize);
+        ngx_memcpy(send_tH264VideoTag_buf, flv+tH264VideoTag.start,tH264VideoTag.datasize);
     }
     if (tH264AudioTag.start > 0) {
-            memcpy(send_tH264AudioTag_buf, flv+tH264AudioTag.start,tH264AudioTag.datasize);
+        ngx_memcpy(send_tH264AudioTag_buf, flv+tH264AudioTag.start,tH264AudioTag.datasize);
     }
+
     return (ngx_int_t)tMetaDataTag.datasize;
 }
 
@@ -725,7 +721,7 @@ static ngx_int_t
 ngx_http_sflv_handler(ngx_http_request_t *r)
 {
     u_char                    *last;
-    double                     start =0,end =0, len, arange;
+    double                     start = 0, end = 0, len;
     size_t                     root, metaend_pos;
     ngx_int_t                  rc;
     ngx_uint_t                 level, i,j;
@@ -833,7 +829,6 @@ ngx_http_sflv_handler(ngx_http_request_t *r)
 
     start = 0;
     len = of.size;
-    arange = 0;
 
 
     if (ngx_http_arg(r, (u_char *) "start", 5, &value) == NGX_OK) {
@@ -853,39 +848,14 @@ ngx_http_sflv_handler(ngx_http_request_t *r)
     end = len;
     if (ngx_http_arg(r, (u_char *) "end", 3, &value) == NGX_OK) {
 
-        /*2013-08-22 by ywby*/
         end = ngx_atoof(value.data, value.len) + 1;
         if (end == NGX_ERROR || (end > len)) {
             end = len;
         }
     }
 
-    if (ngx_http_arg(r, (u_char *) "arange", 6, &value) == NGX_OK) {
 
-        arange = ngx_atoof(value.data, value.len);
-
-        if (arange == NGX_ERROR) {
-            return NGX_DECLINED;
-        }
-    }
-
-
-    if (arange) {
-
-        /* hunan trailer */
-        double temp_start = 0;
-        //ngx_int_t meta_size = ntx_http_eflv_metadata(of.fd,&temp_start,&arange, 1,of.size,send_metadata_buf,send_tH264VideoTag_buf,send_tH264AudioTag_buf,&video_size,&audio_size, r);
-        ntx_http_eflv_metadata(of.fd,&temp_start,&arange, 1,of.size,send_metadata_buf,send_tH264VideoTag_buf,send_tH264AudioTag_buf,&video_size,&audio_size, r);
-
-        if (arange < start) {
-            return NGX_HTTP_NOT_ALLOWED;
-        }
-        if (start < arange && arange < end) {
-            end = arange;
-        }
-    }
-
-    log->action = "sending flvposition to client";
+    log->action = "sending sflv to client";
     r->headers_out.status = NGX_HTTP_OK;
     r->headers_out.last_modified_time = of.mtime;
 
@@ -893,7 +863,7 @@ ngx_http_sflv_handler(ngx_http_request_t *r)
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    if ( start != 0){ 
+    if (start != 0) { 
         b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));
         if (b == NULL) {
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
@@ -909,7 +879,7 @@ ngx_http_sflv_handler(ngx_http_request_t *r)
 
         ntx_htt_sflv_metadata(of.fd,len,send_header_buf,send_metadata_buf,send_tH264VideoTag_buf,send_tH264AudioTag_buf,&metadata_size,&video_size,&audio_size,&metaend_pos, r); 
 
-        if (video_size != 0 ){ 
+        if (video_size != 0) { 
             b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));  
             b->pos = (u_char*)send_tH264VideoTag_buf;  
             b->last = (u_char*)(send_tH264VideoTag_buf + video_size);  
@@ -919,7 +889,7 @@ ngx_http_sflv_handler(ngx_http_request_t *r)
             j++;
         }	
 
-        if ( audio_size != 0 ){
+        if (audio_size != 0) {
             b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));  
             b->pos = (u_char*)send_tH264AudioTag_buf;  
             b->last = (u_char*)(send_tH264AudioTag_buf + audio_size);  
@@ -929,22 +899,19 @@ ngx_http_sflv_handler(ngx_http_request_t *r)
             j++;
         }
 
-        if (start > end){
+        if (start > end) {
             end = len;	
         }
 
-        //sizeof(ngx_flv_header) - 1 + meta_size + end -start + video_size + audio_size;
         r->headers_out.content_length_n =sizeof(ngx_flv_header) - 1 + end -start + video_size + audio_size;
 
-        //r->allow_ranges = 1;
-        /*fangpeng 2014-2-18:change r->allow_ranges to 1 to enable range*/
         r->allow_ranges = 1;
         rc = ngx_http_send_header(r);
         if (rc == NGX_ERROR || rc > NGX_OK || r->header_only) {
             return rc;
         }
 
-        if ((start != len) &&  (start != end)){	
+        if ((start != len) && (start != end)) {	
             b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));
             if (b == NULL) {
                 return NGX_HTTP_INTERNAL_SERVER_ERROR;
@@ -969,15 +936,12 @@ ngx_http_sflv_handler(ngx_http_request_t *r)
 
             out[j].buf = b;
             out[j].next = NULL;
-        }
-        else{
+        } else {
             b->last_buf = 1;
             b->last_in_chain = 1;	
             out[--j].next = NULL;
         }	
-    }
-    else{
-        //sizeof(ngx_flv_header) - 1 + meta_size + end -start + video_size + audio_size;
+    } else {
         r->headers_out.content_length_n = end -start;
 
         b = ngx_pcalloc(r->pool, sizeof(ngx_buf_t));
@@ -990,8 +954,6 @@ ngx_http_sflv_handler(ngx_http_request_t *r)
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
-        //r->allow_ranges = 1;
-        /*fangpeng 2014-2-18:change r->allow_ranges to 1 to enable range*/
         r->allow_ranges = 1;
         rc = ngx_http_send_header(r);
         if (rc == NGX_ERROR || rc > NGX_OK || r->header_only) {
@@ -1165,7 +1127,7 @@ ngx_http_tflv_handler(ngx_http_request_t *r)
 
         ngx_int_t meta_size = ntx_http_eflv_metadata(of.fd,&start,&end,i_have_end,len,send_metadata_buf,send_tH264VideoTag_buf,send_tH264AudioTag_buf,&video_size,&audio_size, r);
 
-        log->action = "sending flvtime to client";
+        log->action = "sending tflv to client";
         r->headers_out.status = NGX_HTTP_OK;
         r->headers_out.last_modified_time = of.mtime;
         if (ngx_http_set_content_type(r) != NGX_OK) {
@@ -1225,8 +1187,6 @@ ngx_http_tflv_handler(ngx_http_request_t *r)
                 return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
-        //r->allow_ranges = 1;
-        /*fangpeng 2014-2-18:change r->allow_ranges to 1 to enable range*/
         r->allow_ranges = 1;
         rc = ngx_http_send_header(r);
         if (rc == NGX_ERROR || rc > NGX_OK || r->header_only) {
